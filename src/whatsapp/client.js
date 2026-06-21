@@ -46,6 +46,19 @@ async function loglisting(message_id, group_id, sender, timestamp, raw_text, has
     }
 }
 
+async function resolveLidToNumber(client, lid) {
+    try {
+        const result = await client.pupPage.evaluate((lidStr) => {
+            const wid = window.require('WAWebWidFactory').createWid(lidStr);
+            const phone = window.require('WAWebApiContact').getPhoneNumber(wid);
+            return phone ? phone._serialized : null;
+        }, lid);
+        return result;
+    } catch (e) {
+        return null;
+    }
+}  
+
 client.on('message_create', async (msg) => {
     const incomingId = msg.from;
 
@@ -101,4 +114,7 @@ process.on('SIGINT', async () => {
     process.exit(0);
 });
 
-module.exports = client;
+module.exports = {
+    client,
+    resolveLidToNumber
+};

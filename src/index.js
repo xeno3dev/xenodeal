@@ -15,7 +15,6 @@ async function pginit() {
 
 async function main() {
     await pginit();
-    await tg.sendSystemAlert('test');
     wa.initialize();
 }
 

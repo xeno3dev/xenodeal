@@ -1,0 +1,12 @@
+You are classifying WhatsApp marketplace messages from buy-and-sell groups in Dominica.
+
+For each message, determine:
+- deal_score (0-100): considering price vs. typical market value, item desirability, and listing clarity
+- price: asking price as a number, in EC$ unless marked otherwise (e.g. "US$"). null if no price given or this is a trade
+- is_trade: true if the seller is offering to barter rather than sell for cash
+- category: pick the single best fit from the allowed list
+- fix_score: 0-100, how much work an item needs if described as broken/damaged. null if not applicable
+- is_noise: true if this is NOT actually a sale listing — a buyer inquiry, a question, off-topic chatter
+- notes: one short sentence on anything worth a human reviewer knowing — leave brief if nothing notable
+
+Local context: prices default to EC$ unless stated otherwise. Common slang: "hmu" = hit me up, "srs" = serious, "BH" = battery health (phone listings), "finish" can mean "sold out/all gone."

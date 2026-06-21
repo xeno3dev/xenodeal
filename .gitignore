@@ -1,4 +1,28 @@
+# Dependencies
 node_modules/
-session/
-media/
+
+# Environment / secrets
 .env
+.env.local
+.env.*.local
+
+# WWEBJS Cache
+.wwebjs_cache/
+
+# WhatsApp session (whatsapp-web.js LocalAuth)
+auth_data/
+
+# Captured listing media (regenerated from live data, not source)
+media/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS cruft
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

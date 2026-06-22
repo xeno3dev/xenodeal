@@ -1,6 +1,6 @@
 const env = require('dotenv').config();
 const pg = require('./db/connection.js');
-const wa = require('./whatsapp/client.js');
+const { client: wa } = require('./whatsapp/client.js');
 const tg = require('./alerts/telegram.js');
 
 async function pginit() {

@@ -1,64 +1,108 @@
--- Phase 2: Core Intelligence | deals table
--- Supports XEN-62 (status state machine), XEN-51 (posted numbers),
--- XEN-60/61 (classification fields), XEN-66 (dashboard labeling)
--- Run after: db/schema.sql (groups + messages tables)
+--
+-- Name: deals; Type: TABLE; Schema: public; Owner: xenodeal
+--
 
-CREATE TABLE deals (
-    id                  SERIAL PRIMARY KEY,
-    source_message_id   TEXT REFERENCES messages(message_id),
-    group_id            TEXT NOT NULL,
-    sender              TEXT NOT NULL,
-
-    -- XEN-60 / XEN-61
-    deal_score          INTEGER,
-    category            TEXT,
-    price               NUMERIC,
-    price_raw           TEXT,
-    is_trade            BOOLEAN NOT NULL DEFAULT false,
-    condition           TEXT,
-    fix_score           INTEGER,
-
-    -- XEN-51
-    posted_numbers      TEXT[],
-
-    -- XEN-62 / XEN-57
-    status              TEXT NOT NULL DEFAULT 'active'
-                            CONSTRAINT deals_status_check
-                            CHECK (status IN ('active', 'likely_sold', 'confirmed_sold', 'relisted')),
-    post_count          INTEGER NOT NULL DEFAULT 1,
-    first_posted_at     TIMESTAMPTZ NOT NULL,
-    last_posted_at      TIMESTAMPTZ NOT NULL,
-
-    -- XEN-66
-    dashboard_label     TEXT
-                            CONSTRAINT deals_dashboard_label_check
-                            CHECK (dashboard_label IN ('sale', 'noise', 'sold_confirm', 'not_sold_confirm')
-                                OR dashboard_label IS NULL),
-
-    created_at          TIMESTAMPTZ DEFAULT now(),
-    updated_at          TIMESTAMPTZ DEFAULT now(),
-
-    -- XEN-60: AI classification fields
-    notes               TEXT,
-    is_noise            BOOLEAN NOT NULL DEFAULT false,
-    raw_text            TEXT,
-
-    -- Full-text search across listing content (RAG keyword retrieval)
-    search_vector       TSVECTOR GENERATED ALWAYS AS (
-                            to_tsvector('english',
-                                COALESCE(raw_text, '') || ' ' ||
-                                COALESCE(notes, '') || ' ' ||
-                                COALESCE(category, '') || ' ' ||
-                                COALESCE(price_raw, '') || ' ' ||
-                                COALESCE(condition, ''))
-                        ) STORED
+CREATE TABLE public.deals (
+    id integer NOT NULL,
+    source_message_id text,
+    group_id text NOT NULL,
+    sender text NOT NULL,
+    deal_score integer,
+    category text,
+    price numeric,
+    price_raw text,
+    is_trade boolean DEFAULT false,
+    condition text,
+    fix_score integer,
+    posted_numbers text[],
+    status text DEFAULT 'active'::text NOT NULL,
+    post_count integer DEFAULT 1,
+    first_posted_at timestamp with time zone NOT NULL,
+    last_posted_at timestamp with time zone NOT NULL,
+    dashboard_label text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    notes text,
+    is_noise boolean DEFAULT false NOT NULL,
+    raw_text text,
+    search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english'::regconfig, ((((((((COALESCE(raw_text, ''::text) || ' '::text) || COALESCE(notes, ''::text)) || ' '::text) || COALESCE(category, ''::text)) || ' '::text) || COALESCE(price_raw, ''::text)) || ' '::text) || COALESCE(condition, ''::text)))) STORED,
+    potential_selling_price numeric,
+    CONSTRAINT deals_dashboard_label_check CHECK (((dashboard_label = ANY (ARRAY['sale'::text, 'noise'::text, 'sold_confirm'::text, 'not_sold_confirm'::text])) OR (dashboard_label IS NULL))),
+    CONSTRAINT deals_status_check CHECK ((status = ANY (ARRAY['active'::text, 'likely_sold'::text, 'confirmed_sold'::text, 'relisted'::text])))
 );
 
--- XEN-65/66: filter/sort by status
-CREATE INDEX idx_deals_status ON deals (status);
 
--- XEN-57: find existing deals per seller+group for repost tracking
-CREATE INDEX idx_deals_group_sender ON deals (group_id, sender);
+ALTER TABLE public.deals OWNER TO xenodeal;
 
--- RAG keyword retrieval
-CREATE INDEX idx_deals_fts ON deals USING GIN (search_vector);
+--
+-- Name: deals_id_seq; Type: SEQUENCE; Schema: public; Owner: xenodeal
+--
+
+CREATE SEQUENCE public.deals_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.deals_id_seq OWNER TO xenodeal;
+
+--
+-- Name: deals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: xenodeal
+--
+
+ALTER SEQUENCE public.deals_id_seq OWNED BY public.deals.id;
+
+
+--
+-- Name: deals id; Type: DEFAULT; Schema: public; Owner: xenodeal
+--
+
+ALTER TABLE ONLY public.deals ALTER COLUMN id SET DEFAULT nextval('public.deals_id_seq'::regclass);
+
+
+--
+-- Name: deals deals_pkey; Type: CONSTRAINT; Schema: public; Owner: xenodeal
+--
+
+ALTER TABLE ONLY public.deals
+    ADD CONSTRAINT deals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: deals deals_source_message_id_unique; Type: CONSTRAINT; Schema: public; Owner: xenodeal
+--
+
+ALTER TABLE ONLY public.deals
+    ADD CONSTRAINT deals_source_message_id_unique UNIQUE (source_message_id);
+
+
+--
+-- Name: idx_deals_fts; Type: INDEX; Schema: public; Owner: xenodeal
+--
+
+CREATE INDEX idx_deals_fts ON public.deals USING gin (search_vector);
+
+
+--
+-- Name: idx_deals_group_sender; Type: INDEX; Schema: public; Owner: xenodeal
+--
+
+CREATE INDEX idx_deals_group_sender ON public.deals USING btree (group_id, sender);
+
+
+--
+-- Name: idx_deals_status; Type: INDEX; Schema: public; Owner: xenodeal
+--
+
+CREATE INDEX idx_deals_status ON public.deals USING btree (status);
+
+
+--
+-- Name: deals deals_source_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: xenodeal
+--
+
+ALTER TABLE ONLY public.deals
+    ADD CONSTRAINT deals_source_message_id_fkey FOREIGN KEY (source_message_id) REFERENCES public.messages(message_id);

@@ -20,7 +20,7 @@ function extractPostedNumbers(rawText) {
 
     let localNumbers = [];
     if (LOCAL_AREA_CODE && /^\d{3}$/.test(LOCAL_AREA_CODE)) {
-        const localMatches = remainder.match(LOCAL_7_DIGIT_PATTERN) || [];
+        const localMatches = remainder.match(DM_7_DIGIT) || [];
         localNumbers = localMatches.map(m => normalize(LOCAL_AREA_CODE + m));
     }
 

@@ -11,11 +11,14 @@ const client = new Client({
     puppeteer: {
         executablePath: '/usr/bin/chromium',
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     },
-    authStrategy: new LocalAuth({
-        dataPath: 'auth_data'
-    })
+    authStrategy: new LocalAuth({ dataPath: 'auth_data' }),
+    webVersion: '2.3000.1041871181-alpha',
+    webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1041871181-alpha.html'
+    }
 });
 
 client.on('qr', (qr) => {
@@ -25,6 +28,8 @@ client.on('qr', (qr) => {
 client.on('ready', async () => {
     console.log('Client is ready!');
     await tg.sendSystemAlert('WhatsApp Client is ready!');
+
+    require('../cron/classifier');
 });
 
 client.on('disconnected', async (reason) => {
@@ -88,7 +93,28 @@ client.on('message_create', async (msg) => {
                 await fs.mkdir(dir, { recursive: true });
                 await fs.writeFile(filePath, processed);
                 console.log(`Received message w/ media in group ${match.friendly_name} (${match.group_id})`);
-                await loglisting(msg.id._serialized, match.group_id, msg.author || msg.from, new Date(msg.timestamp * 1000), msg.body, true, filePath, false);
+                let sender = msg.author || msg.from;
+
+                if (sender?.includes('@lid')) {
+                    try {
+                        const resolved = await client.pupPage.evaluate((lid) => {
+                            try {
+                                const wid   = window.require('WAWebWidFactory').createWid(lid);
+                                const phone = window.require('WAWebApiContact').getPhoneNumber(wid);
+                                return phone ? phone._serialized : null;
+                            } catch (e) {
+                                return null;
+                            }
+                        }, sender);
+
+                        if (resolved) sender = resolved;
+                        // if null, keep original @lid as fallback
+                    } catch (err) {
+                        console.error('[client] @lid resolution failed:', err.message);
+                        // non-fatal — keep @lid, continue insert
+                    }
+                }
+                await loglisting(msg.id._serialized, match.group_id, sender, new Date(msg.timestamp * 1000), msg.body, true, filePath, false);
             } catch (mediaErr) {
                 console.error('Failed to retrieve/process media, treating as no-media:', mediaErr);
                 console.log(`Received message in group ${match.friendly_name} (${match.group_id})`);

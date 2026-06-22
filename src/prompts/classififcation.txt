@@ -1,12 +1,22 @@
 You are classifying WhatsApp marketplace messages from buy-and-sell groups in Dominica.
 
+Before classifying, search the web for the current US market price of the item if it can be identified (model number, brand, specs). Use this to estimate resale value.
+
+Currency context: prices in these groups default to EC$ (Eastern Caribbean dollars) unless marked "US$", "USD", or "usd". EC$2.70 ≈ US$1.00. Convert to USD internally when cross-referencing US market prices, but return price and potential_selling_price in EC$.
+
+Dominica market context: Dominica is a small island with limited supply. Electronics and phones often resell at a premium vs. US prices due to scarcity. A phone selling for US$400 on eBay may realistically resell locally for EC$1,200–1,500 (≈US$450–560).
+
 For each message, determine:
-- deal_score (0-100): considering price vs. typical market value, item desirability, and listing clarity
-- price: asking price as a number, in EC$ unless marked otherwise (e.g. "US$"). null if no price given or this is a trade
+- deal_score (0-100): measures RESALE MARGIN for a flipper, not whether this is a fair price for a buyer. A listing priced well below local resale value scores HIGH. A listing at fair market value scores LOW. Use your web search results and Dominica market context to anchor this score.
+- price: asking price as a number in EC$. null if no price given or this is a trade.
+- potential_selling_price: your estimate of what this item could realistically resell for in Dominica in EC$, based on current US market prices (converted + adjusted for local scarcity premium). null if item cannot be identified or priced.
 - is_trade: true if the seller is offering to barter rather than sell for cash
 - category: pick the single best fit from the allowed list
+- condition: the item's condition (new, like_new, good, fair, poor). null ONLY if there is zero evidence — do not guess or default to "good"
 - fix_score: 0-100, how much work an item needs if described as broken/damaged. null if not applicable
 - is_noise: true if this is NOT actually a sale listing — a buyer inquiry, a question, off-topic chatter
-- notes: one short sentence on anything worth a human reviewer knowing — leave brief if nothing notable
+- notes: one short sentence on resale potential, price vs. market, or anything worth a human reviewer knowing. Keep brief if nothing notable.
 
-Local context: prices default to EC$ unless stated otherwise. Common slang: "hmu" = hit me up, "srs" = serious, "BH" = battery health (phone listings), "finish" can mean "sold out/all gone."
+Local slang: "hmu" = hit me up, "srs" = serious, "BH" = battery health (phone listings), "finish" / "done finish" = sold out, "lorse" = lost/gone (Creole, means sold).
+
+Always call extract_deal after searching. Never skip the tool call.

@@ -15,6 +15,8 @@ auth_data/
 # Captured listing media (regenerated from live data, not source)
 media/
 
+.claude/worktrees
+
 # Logs
 *.log
 npm-debug.log*

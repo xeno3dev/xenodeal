@@ -7,9 +7,9 @@ const client = new Claude();
 const dealSchema = {
     type: 'object',
     properties: {
-        deal_score:              { type: 'integer',           description: '0-100, resale margin for a flipper — not buyer fairness' },
-        price:                   { type: ['number', 'null'],  description: 'Asking price in EC$. null if no price or trade.' },
-        is_trade:                { type: 'boolean' },
+        deal_score: { type: 'integer', description: '0-100, resale margin for a flipper — not buyer fairness' },
+        price: { type: ['number', 'null'], description: 'Asking price in EC$. null if no price or trade.' },
+        is_trade: { type: 'boolean' },
         category: {
             type: 'string',
             enum: ['electronics', 'phones_tablets', 'computers', 'appliances',
@@ -17,11 +17,11 @@ const dealSchema = {
                    'services', 'home_garden', 'tools', 'sports_outdoors',
                    'baby_kids', 'pets', 'other']
         },
-        condition:               { type: ['string', 'null'],  description: 'new, like_new, good, fair, or poor. null ONLY if zero evidence — do not default to good.' },
+        condition: { type: ['string', 'null'], description: 'new, like_new, good, fair, or poor. null ONLY if zero evidence — do not default to good.' },
         potential_selling_price: { type: ['number', 'null'],  description: 'Estimated local resale value in EC$, based on US market price + Dominica scarcity premium. null if item unidentifiable.' },
-        fix_score:               { type: ['integer', 'null'], description: '0-100 repair effort if broken/damaged. null if not applicable.' },
-        is_noise:                { type: 'boolean',           description: 'true if NOT a sale listing — buyer inquiry, chatter, off-topic.' },
-        notes:                   { type: 'string',            description: 'One short sentence on resale potential or anything a reviewer should know.' }
+        fix_score: { type: ['integer', 'null'], description: '0-100 repair effort if broken/damaged. null if not applicable.' },
+        is_noise: { type: 'boolean', description: 'true if NOT a sale listing — buyer inquiry, chatter, off-topic.' },
+        notes: { type: 'string', description: 'One short sentence on resale potential or anything a reviewer should know.' }
     },
     required: ['deal_score', 'price', 'is_trade', 'category', 'is_noise', 'potential_selling_price']
 };
@@ -38,10 +38,10 @@ function sanitizeNumbers(result) {
     const numOrNull = v => (typeof v === 'number' && isFinite(v)) ? v : null;
     return {
         ...result,
-        price:                   numOrNull(result.price),
+        price: numOrNull(result.price),
         potential_selling_price: numOrNull(result.potential_selling_price),
-        fix_score:               numOrNull(result.fix_score),
-        deal_score:              numOrNull(result.deal_score),
+        fix_score: numOrNull(result.fix_score),
+        deal_score: numOrNull(result.deal_score),
     };
 }
 
@@ -80,13 +80,13 @@ async function classifyDeal(rawText, mediaRef) {
     content.push({ type: 'text', text: rawText?.trim() || '[media-only listing, no text]' });
 
     const searchPass = skipSearch ? null : await withRetry(() => client.messages.create({
-        model:       process.env.AI_MODEL,
-        max_tokens:  4096,
-        system:      prompts.classification,
+        model: process.env.AI_MODEL,
+        max_tokens: 4096,
+        system: prompts.classification,
         temperature: 0.2,
-        tools:       [{ type: 'web_search_20250305', name: 'web_search' }],
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         tool_choice: { type: 'any' },
-        messages:    [{ role: 'user', content }]
+        messages: [{ role: 'user', content }]
     }));
 
     const extractMessages = [
@@ -96,13 +96,13 @@ async function classifyDeal(rawText, mediaRef) {
     ];
 
     const extractPass = await withRetry(() => client.messages.create({
-        model:       process.env.AI_MODEL,
-        max_tokens:  1024,
-        system:      prompts.classification,
+        model: process.env.AI_MODEL,
+        max_tokens: 1024,
+        system: prompts.classification,
         temperature: 0.2,
-        tools:       TOOLS_EXTRACT,
+        tools: TOOLS_EXTRACT,
         tool_choice: { type: 'tool', name: 'extract_deal' },
-        messages:    extractMessages
+        messages: extractMessages
     }));
 
     const dealBlock = extractPass.content.find(b => b.type === 'tool_use' && b.name === 'extract_deal');

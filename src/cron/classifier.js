@@ -1,6 +1,3 @@
-// src/cron/classifier.js
-// Polls for unprocessed messages, runs AI classification, writes to deals table.
-
 const { pool } = require('../db/connection');
 const { classifyMessage } = require('../intelligence/preFilter');
 const { classifyDeal } = require('../intelligence/aiClient');
@@ -9,7 +6,7 @@ const { sendDealAlert } = require('../alerts/telegram');
 
 const MAX_BATCH = 100;
 const MIN_BATCH = 20;
-const INTERVAL_MS = 60 * 1000; // 60 seconds
+const INTERVAL_MS = 60 * 1000;
 
 async function getBatchSize() {
     const r = await pool.query(
@@ -22,14 +19,9 @@ async function getBatchSize() {
 
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// processBatch — runs once per tick
-// ─────────────────────────────────────────────────────────────────────────────
 async function processBatch() {
     const batchSize = await getBatchSize();
 
-    // 1. Grab up to 20 unprocessed rows, oldest first.
-    //    pool.query() is fine here — no transaction needed for a plain SELECT.
     let rows;
     try {
         const result = await pool.query(
@@ -42,33 +34,19 @@ async function processBatch() {
         rows = result.rows;
     } catch (err) {
         console.error('[classifier] DB fetch failed:', err.message);
-        return; // nothing to do this tick
+        return;
     }
 
-    if (rows.length === 0) return; // queue empty, bail quietly
+    if (rows.length === 0) return;
 
     console.log(`[classifier] Processing ${rows.length} row(s)...`);
 
     let done = 0;
 
-    // 2. Process each row one at a time (await inside for…of = sequential).
-    //    Sequential matters: hammering the Anthropic API with 20 parallel calls
-    //    will hit rate limits fast. One at a time is safe.
     for (const row of rows) {
-
-        // ── Step A: pre-filter ───────────────────────────────────────────────
-        // classifyMessage() is a pure local function — no API, no DB.
-        // Returns 'candidate', 'noise', or 'link_only'.
-        // We pass undefined for messageType because that field only exists on
-        // the live wwebjs object, not in the DB row. The sticker branch won't
-        // fire here — acceptable gap for the poller.
         const preResult = classifyMessage(row.raw_text, row.has_media, undefined);
 
         if (preResult === 'noise' || preResult === 'link_only') {
-            // ── Noise path: no AI call needed ────────────────────────────────
-            // Still write a deal row (is_noise = true) and mark processed.
-            // If we skip the INSERT and just mark processed, we lose the record
-            // of why it was ignored — harder to audit later.
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
@@ -95,35 +73,23 @@ async function processBatch() {
                 await client.query('COMMIT');
                 done++;
             } catch (err) {
-                // ROLLBACK undoes both the INSERT and the UPDATE atomically.
-                // processed stays false → row will be retried next tick.
                 await client.query('ROLLBACK');
                 console.error(`[classifier] DB error (noise) ${row.message_id}:`, err.message);
             } finally {
-                // ALWAYS release the client back to the pool.
-                // Missing this = pool exhaustion = everything hangs.
                 client.release();
             }
 
-            continue; // move to next row
+            continue;
         }
 
-        // ── Step B: AI classification (candidate only) ───────────────────────
-        // We call classifyDeal BEFORE opening a DB transaction.
-        // Reason: if the Anthropic API throws, we haven't touched the DB yet —
-        // no rollback needed, the row just stays unprocessed and retries next tick.
         let result;
         try {
             result = await classifyDeal(row.raw_text, row.media_ref);
         } catch (err) {
             console.error(`[classifier] AI error on ${row.message_id}:`, err.message);
-            continue; // skip this row this tick, will retry
+            continue;
         }
 
-        // ── Step C: write AI result to DB ────────────────────────────────────
-        // Now we have a result — open a transaction and write everything at once.
-        // If either query fails, ROLLBACK keeps the DB consistent and the row
-        // retries next tick (because processed is still false).
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
@@ -145,7 +111,7 @@ async function processBatch() {
                     $14, $15,
                     $16, $17,
                     $18, $19
-                ) RETURNING *`,
+                ) ON CONFLICT (source_message_id) DO NOTHING RETURNING *`,
                 [
                     row.message_id,    row.group_id,       row.sender,         row.raw_text,
                     result.deal_score, result.category,    result.price,       null,        // price_raw: not in AI schema
@@ -157,19 +123,21 @@ async function processBatch() {
                 ]
             );
 
+            const inserted = insertResult.rows[0] ?? null;
+
             await client.query(
                 `UPDATE messages SET processed = true WHERE message_id = $1`,
                 [row.message_id]
             );
 
-            const inserted = insertResult.rows[0];
-
             await client.query('COMMIT');
             done++;
-            
-            await sendDealAlert(inserted).catch(err =>
-                console.error(`[classifier] Alert failed ${row.message_id}:`, err.message)
-            );
+
+            if (inserted) {
+                await sendDealAlert(inserted).catch(err =>
+                    console.error(`[classifier] Alert failed ${row.message_id}:`, err.message)
+                );
+            }
         } catch (err) {
             await client.query('ROLLBACK');
             console.error(`[classifier] DB error (candidate) ${row.message_id}:`, err.message);
@@ -182,14 +150,9 @@ async function processBatch() {
     console.log(`[classifier] Done. ${done}/${rows.length} processed.`);
 }
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Kick-off
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Run once immediately on startup, then every 60s.
-// getBatchSize() handles backlog automatically — no drain loop needed.
-processBatch().catch(err => console.error('[classifier] Startup error:', err.message));
+setTimeout(() => {
+    processBatch().catch(err => console.error('[classifier] Startup error:', err.message));
+}, 5000);
 
 setInterval(async () => {
     try { await processBatch(); }

@@ -1,8 +1,11 @@
 const { Telegraf } = require('telegraf');
+const { pool } = require('../db/connection')
 
 const groups = require('../config/groups.json');
 
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN, {
+    handlerTimeout: 30000
+});
 
 const CATEGORY_LABELS = {
     electronics: 'Electronics', phones_tablets: 'Phones & Tablets',
@@ -26,15 +29,14 @@ function formatDate(ts) {
 }
 
 async function sendDealAlert(deal) {
-    const threshold = parseInt(process.env.DEAL_ALERT_THRESHOLD) || 65;
-    if (deal.is_noise || deal.deal_score < threshold) return;
+    if (deal.is_noise) return;
 
     const group = groups.find(g => g.group_id === deal.group_id);
     const groupName = group?.friendly_name ?? deal.group_id;
-    const category  = CATEGORY_LABELS[deal.category]  ?? deal.category;
+    const category = CATEGORY_LABELS[deal.category]  ?? deal.category;
     const condition = CONDITION_LABELS[deal.condition] ?? deal.condition ?? 'Unknown';
-    const price     = deal.price                    != null ? `$${deal.price}`                    : 'N/A';
-    const resell    = deal.potential_selling_price  != null ? `$${deal.potential_selling_price}`  : 'N/A';
+    const price = deal.price != null ? `$${deal.price}` : 'N/A';
+    const resell = deal.potential_selling_price  != null ? `$${deal.potential_selling_price}` : 'N/A';
 
     const lines = [
         `🤑 <b>Deal Alert</b>`,
@@ -54,22 +56,45 @@ async function sendDealAlert(deal) {
         `<b>Group:</b> ${groupName}`,
     ].filter(Boolean).join('\n');
 
-    const number = deal.posted_numbers?.[0] ?? null;
+    const lidPattern = /@lid$/;
+    const senderPhone = lidPattern.test(deal.sender) ? null : deal.sender;
+    const number = deal.posted_numbers?.[0] ?? senderPhone ?? null;
 
-    await bot.telegram.sendMessage(
-        process.env.TELEGRAM_CHAT_ID,
-        lines,
-        {
-            parse_mode: 'HTML',
-            ...(number && {
-                reply_markup: {
-                    inline_keyboard: [[
-                        { text: '📱 Contact Seller', url: `https://wa.me/${number}` }
-                    ]]
-                }
-            })
-        }
+    const { rows } = await pool.query(
+        `SELECT s.telegram_chat_id
+         FROM subscribers s
+         JOIN user_groups ug ON ug.subscriber_id = s.telegram_chat_id
+         WHERE s.status    = 'active'
+           AND s.wa_status = 'connected'
+           AND ug.group_jid = $1
+           AND $2 >= s.threshold
+           AND (s.categories IS NULL OR $3 = ANY(s.categories))`,
+        [deal.group_id, deal.deal_score, deal.category]
     );
+
+    if (rows.length === 0) return;
+
+    for (const row of rows) {
+        try {
+            await bot.telegram.sendMessage(
+                row.telegram_chat_id,
+                lines,
+                {
+                    parse_mode: 'HTML',
+                    ...(number && {
+                        reply_markup: {
+                            inline_keyboard: [[
+                                { text: '📱 Contact Seller', url: `https://wa.me/${number}` }
+                            ]]
+                        }
+                    })
+                }
+
+            );
+        } catch (err) {
+            console.error(`[telegram] Failed to alert ${row.telegram_chat_id}:`, err.message)
+        }
+    }
 }
 
 module.exports = {
